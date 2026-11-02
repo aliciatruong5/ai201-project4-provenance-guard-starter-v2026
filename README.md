@@ -98,6 +98,27 @@ A piece of text goes through seven stages between arriving and the label a reade
 
 **A case where my two signals split, and what my rule does with it:**
 
+Both signals run over the same pieces (`model` is `detector.model_signal`, `style` is `stylometry.style_signal`; higher means more likely AI). I wrote the human and edited samples myself as stand-ins, so they are not a real test set.
+
+| Piece | model | style | Agree? |
+|---|---|---|---|
+| Chatbot paragraph (time management) | 0.884 | 0.536 | Both lean AI, but style is barely past the middle |
+| Vivid human paragraph (landlord's dog) | 0.305 | 0.271 | Agree: human |
+| Plain human paragraph (grocery store) | 0.762 | 0.534 | Both lean AI: the false positive |
+| Casual, uneven text standing in for edited AI | 0.315 | 0.298 | Agree: human |
+| Plain words, uneven sentences (bus story) | 0.742 | 0.366 | **Split** |
+| Ornate rare words, even sentences | 0.304 | 0.684 | **Split**, the other way |
+
+On the first four they agree on direction. They differ in range: style only spans 0.27 to 0.54, while model spans 0.31 to 0.88. So style rarely contradicts the model, but it also rarely backs it up.
+
+The case the rule has to handle is the bus story, a short human paragraph in plain words with a mix of one-word and long sentences:
+
+> I was tired. So tired that on Monday I got on the wrong bus and rode it for forty minutes before I even noticed, and then I just sat there. Fine. It was a nice bus. The driver waved at me when I finally got off.
+
+The model signal gives 0.742 because every word is common, which is the blind spot for plain writers. The style signal gives 0.366 because the sentence lengths swing from one word to thirty (spread 1.14). One signal accuses a real person while the other clears them. A plain 50/50 average gives about 0.55, which lands in "unsure". That is the outcome I want here, but only by luck of the weights. The ornate case splits the other way (model 0.30, style 0.68, average 0.49), and the same average is just as right there.
+
+What my rule does with it: **not decided yet.** It is written in Milestone 4, and this is the case it has to pass. Any rule has to keep a split like this out of the AI label, so that two signals disagreeing counts as uncertainty and never as an accusation.
+
 
 
 ---
