@@ -139,12 +139,21 @@ A piece of text goes through seven stages between arriving and the label a reade
 ```bash
 $ curl -X POST http://127.0.0.1:5000/submit \
   -H "Content-Type: application/json" \
-  -d '{"text": "...", "creator_id": "..."}'
+  -d '{"text": "I work at a grocery store on the weekends. The job is okay. I stock the shelves and help customers find things. Sometimes it gets busy and my feet hurt by the end of the day. I like my coworkers, and they are nice to me.", "creator_id": "writer_042"}'
 ```
 
 ```json
-
+{
+  "confidence": 0.5,
+  "content_id": "27b443d4-2cad-4dd7-9f48-10a9e576cf0f",
+  "guess": "unsure",
+  "label": "PLACEHOLDER \u2014 the real label comes in Milestone 5.",
+  "model_score": 0.7625,
+  "style_score": null
+}
 ```
+
+> Status so far: only signal one is wired in. `style_score` is `null`, and `guess`, `confidence` and `label` are placeholders until Milestones 4 and 5. Re-run this block when they are.
 
 **An appeal**
 
@@ -165,7 +174,22 @@ $ curl "http://127.0.0.1:5000/log?limit=3"
 ```
 
 ```json
-
+{
+  "count": 1,
+  "entries": [
+    {
+      "combined_score": null,
+      "content_id": "27b443d4-2cad-4dd7-9f48-10a9e576cf0f",
+      "creator_id": "writer_042",
+      "guess": "unsure",
+      "label": "PLACEHOLDER \u2014 the real label comes in Milestone 5.",
+      "model_score": 0.7625,
+      "status": "decided",
+      "style_score": null,
+      "timestamp": "2026-11-02T02:54:25+00:00"
+    }
+  ]
+}
 ```
 
 ---
