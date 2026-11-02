@@ -202,9 +202,8 @@ def submit():
     what should this do when `text` is missing, empty, or enormous? A crash on
     a malformed input is one of the most common real failures there is.
     """
-    # Read the input, run both signals, combine them, log all three scores,
-    # answer. Guess, confidence and label are still placeholders — they come in
-    # Milestone 5.
+    # Read the input, run both signals, combine them, turn the score into a
+    # label, log the decision, answer.
     payload = request.get_json(silent=True)
     if not isinstance(payload, dict):
         payload = {}
@@ -240,9 +239,16 @@ def submit():
     combined_score = scoring.combine_signals(model_score, style_score)
 
     content_id = str(uuid.uuid4())
-    guess = "unsure"
-    confidence = 0.5
-    label = "PLACEHOLDER — the real label comes in Milestone 5."
+    guess, label = scoring.score_to_label(combined_score)
+    # Confidence in the guess, as DESIGN.md defines it: the score itself for
+    # "ai", its mirror for "human", and closeness to the middle for "unsure".
+    if guess == "ai":
+        confidence = combined_score
+    elif guess == "human":
+        confidence = 1.0 - combined_score
+    else:
+        confidence = 1.0 - 2.0 * abs(combined_score - 0.5)
+    confidence = round(confidence, 4)
 
     audit.log_decision(
         content_id=content_id,
@@ -285,14 +291,48 @@ def appeal():
     to the person on the other end. It's the only thing standing between a
     wrong accusation and nothing at all.
     """
-    payload = request.get_json(silent=True) or {}
+    payload = request.get_json(silent=True)
+    if not isinstance(payload, dict):
+        payload = {}
+    content_id = payload.get("content_id")
+    reasoning = payload.get("reasoning")
 
-    # TODO: delete this and build the route.
+    if not isinstance(content_id, str) or not content_id.strip() \
+            or not isinstance(reasoning, str) or not reasoning.strip() \
+            or len(reasoning) > 2000:
+        return jsonify({
+            "error": "invalid_input",
+            "message": "Send JSON with a 'content_id' and your 'reasoning' "
+                       "(up to 2,000 characters).",
+        }), 400
+
+    # Only a real decision counts. An id that exists only in a rejection or an
+    # earlier appeal has no original decision to appeal against.
+    decisions = [
+        e for e in audit.entries_for(content_id.strip())
+        if "event" not in e
+    ]
+    if not decisions:
+        return jsonify({
+            "error": "unknown_content_id",
+            "message": "We couldn't find a submission with that id. "
+                       "Check it and try again.",
+        }), 404
+
+    # The writer comes from the original decision, not from the request, so
+    # nobody can appeal for someone else by guessing an id.
+    audit.log_appeal(
+        content_id=content_id.strip(),
+        creator_id=decisions[0]["creator_id"],
+        reasoning=reasoning.strip(),
+    )
+
     return jsonify({
-        "error": "not_implemented",
-        "message": "POST /appeal isn't built yet — see the TODO in app.py.",
-        "you_sent": payload,
-    }), 501
+        "content_id": content_id.strip(),
+        "status": "under_review",
+        "message": "Thank you. We've recorded your appeal and a person will "
+                   "look at it.",
+    })
 
 
 # ── Already works ─────────────────────────────────────────────────────────────

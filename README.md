@@ -159,14 +159,20 @@ What my rule does with it: **not decided yet.** It is written in Milestone 4, an
 
 | Label | Score range | The exact text a reader sees |
 |---|---|---|
-| high-confidence human |  |  |
-| unsure |  |  |
-| high-confidence AI |  |  |
+| high-confidence human | 0.00 – 0.35 | We think this was probably written by a person. |
+| unsure | 0.35 – 0.70 | We can't tell whether this was written by a person or with an AI tool. That is not a judgment against you, and nothing needs to change. |
+| high-confidence AI | 0.70 – 1.00 | This looks like it may have been written with an AI tool, but we can get this wrong, especially with plain or formal writing. If you wrote it yourself, tell us and a person will take a look. |
+
+The ranges are on the combined score from `scoring.py::combine_signals`. The sentences are held in `scoring.py` (`LABEL_HUMAN`, `LABEL_UNSURE`, `LABEL_AI`) and mapped by `score_to_label`, so the text above is what the code returns.
 
 **Why I worded the "unsure" one this way:**
 <!-- It's the hardest of the three. It has to admit uncertainty without
      sounding like an accusation, because the person reading it may well have
      written every word themselves. -->
+
+The reader of this label is, most of the time, a real writer. My own test showed why: a plain paragraph about a weekend job and a formal committee paragraph both leaned AI on the model signal and landed here. So the sentence says what we can't do ("We can't tell") and not what the writer might have done. It names both possibilities, so that "AI tool" is not the only thing on the page. And it says outright that this is "not a judgment against you, and nothing needs to change", because the first thing someone reads into any flag is that they are in trouble. It deliberately has no score and no next step to take, since a reader who did nothing wrong shouldn't be handed homework.
+
+The AI label is worded the same way: "may have been" and "we can get this wrong", with the two kinds of writing it gets wrong most named. It ends by telling the writer how to answer back, because the appeal is the only thing between a wrong label and nothing at all.
 
 
 
@@ -187,58 +193,77 @@ What my rule does with it: **not decided yet.** It is written in Milestone 4, an
 ```bash
 $ curl -X POST http://127.0.0.1:5000/submit \
   -H "Content-Type: application/json" \
-  -d '{"text": "I work at a grocery store on the weekends. The job is okay. I stock the shelves and help customers find things. Sometimes it gets busy and my feet hurt by the end of the day. I like my coworkers, and they are nice to me.", "creator_id": "writer_042"}'
+  -d '{"text": "The committee has considered the proposal at some length and, while it recognises the force of the objections raised by the department, it is not persuaded that the existing arrangements can be maintained. The costs of delay fall chiefly on the junior staff. We therefore recommend that the change take effect in the autumn term, subject to the conditions set out in section four.", "creator_id": "t_unsure"}'
 ```
 
 ```json
 {
-  "confidence": 0.5,
-  "content_id": "27b443d4-2cad-4dd7-9f48-10a9e576cf0f",
+  "combined_score": 0.586,
+  "confidence": 0.828,
+  "content_id": "e9758253-ad3c-470d-a00a-3c6861abe76e",
   "guess": "unsure",
-  "label": "PLACEHOLDER \u2014 the real label comes in Milestone 5.",
-  "model_score": 0.7625,
-  "style_score": null
+  "label": "We can't tell whether this was written by a person or with an AI tool. That is not a judgment against you, and nothing needs to change.",
+  "model_score": 0.7497,
+  "style_score": 0.4224
 }
 ```
 
-> Status so far: only signal one is wired in. `style_score` is `null`, and `guess`, `confidence` and `label` are placeholders until Milestones 4 and 5. Re-run this block when they are.
+This is a formal human paragraph. It lands in "unsure" even though the model signal alone says 0.75, because the style signal says 0.42 (see the combining rule above).
 
 **An appeal**
+
+This appeals the formal paragraph from the submission above, using its `content_id`.
 
 ```bash
 $ curl -X POST http://127.0.0.1:5000/appeal \
   -H "Content-Type: application/json" \
-  -d '{"content_id": "...", "reasoning": "..."}'
-```
-
-```json
-
-```
-
-**What the log shows afterwards**
-
-```bash
-$ curl "http://127.0.0.1:5000/log?limit=3"
+  -d '{"content_id": "e9758253-ad3c-470d-a00a-3c6861abe76e", "reasoning": "I wrote this myself as part of a committee report. It is formal because that is the register the report requires."}'
 ```
 
 ```json
 {
-  "count": 1,
+  "content_id": "e9758253-ad3c-470d-a00a-3c6861abe76e",
+  "message": "Thank you. We've recorded your appeal and a person will look at it.",
+  "status": "under_review"
+}
+```
+
+Two failures, for the record: an id that doesn't exist returns `404 unknown_content_id`, and a request with no `reasoning` returns `400 invalid_input`. Neither writes anything to the log.
+
+**What the log shows afterwards**
+
+```bash
+$ curl "http://127.0.0.1:5000/log?limit=2"
+```
+
+```json
+{
+  "count": 2,
   "entries": [
     {
-      "combined_score": null,
-      "content_id": "27b443d4-2cad-4dd7-9f48-10a9e576cf0f",
-      "creator_id": "writer_042",
+      "combined_score": 0.586,
+      "content_id": "e9758253-ad3c-470d-a00a-3c6861abe76e",
+      "creator_id": "t_unsure",
       "guess": "unsure",
-      "label": "PLACEHOLDER \u2014 the real label comes in Milestone 5.",
-      "model_score": 0.7625,
+      "label": "We can't tell whether this was written by a person or with an AI tool. That is not a judgment against you, and nothing needs to change.",
+      "model_score": 0.7497,
       "status": "decided",
-      "style_score": null,
-      "timestamp": "2026-11-02T02:54:25+00:00"
+      "style_score": 0.4224,
+      "timestamp": "2026-11-02T03:08:56+00:00"
+    },
+    {
+      "content_id": "e9758253-ad3c-470d-a00a-3c6861abe76e",
+      "creator_id": "t_unsure",
+      "event": "appeal",
+      "reasoning": "I wrote this myself as part of a committee report. It is formal because that is the register the report requires.",
+      "status": "under_review",
+      "timestamp": "2026-11-02T03:10:18+00:00"
     }
   ]
 }
 ```
+
+The log is append-only. The original decision (`status: "decided"`) is untouched, and the appeal sits after it with `status: "under_review"`, the writer's reasoning, and the same `content_id`. The item's current status is the status of its latest entry.
 
 ---
 

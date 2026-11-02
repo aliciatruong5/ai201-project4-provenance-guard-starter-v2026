@@ -19,6 +19,20 @@ you claim, so that line should read `scoring.py::combine_signals`.
 import config
 
 
+# The three sentences a reader sees. No numbers and no jargon: the person
+# reading the unsure or AI one may well have written every word themselves.
+LABEL_HUMAN = "We think this was probably written by a person."
+LABEL_UNSURE = (
+    "We can't tell whether this was written by a person or with an AI tool. "
+    "That is not a judgment against you, and nothing needs to change."
+)
+LABEL_AI = (
+    "This looks like it may have been written with an AI tool, but we can get "
+    "this wrong, especially with plain or formal writing. If you wrote it "
+    "yourself, tell us and a person will take a look."
+)
+
+
 def combine_signals(model_score: float, style_score: float) -> float:
     """
     Combine two 0–1 signals into one 0–1 score. ← TODO (Milestone 4)
@@ -92,12 +106,11 @@ def score_to_label(score: float) -> tuple[str, str]:
     think if they got it on their own work. That question is the whole
     milestone.
     """
-    # TODO: replace this — thresholds are in config.py
-    if score >= config.AI_THRESHOLD:
-        return "ai", "PLACEHOLDER — write the high-confidence AI label."
-    if score <= config.HUMAN_THRESHOLD:
-        return "human", "PLACEHOLDER — write the high-confidence human label."
-    return "unsure", "PLACEHOLDER — write the unsure label."
+    if score > config.AI_THRESHOLD:
+        return "ai", LABEL_AI
+    if score < config.HUMAN_THRESHOLD:
+        return "human", LABEL_HUMAN
+    return "unsure", LABEL_UNSURE
 
 
 def label_ranges() -> list[tuple[str, str]]:
