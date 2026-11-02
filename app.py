@@ -31,6 +31,8 @@ from flask import Flask, jsonify, request
 import audit
 import config
 import detector
+import scoring
+import stylometry
 
 app = Flask(__name__)
 
@@ -200,9 +202,9 @@ def submit():
     what should this do when `text` is missing, empty, or enormous? A crash on
     a malformed input is one of the most common real failures there is.
     """
-    # Milestone 3, steps 2-4: read the input, run signal one, log, answer.
-    # Confidence, label and the style score are still placeholders — they come
-    # in Milestones 4 and 5.
+    # Read the input, run both signals, combine them, log all three scores,
+    # answer. Guess, confidence and label are still placeholders — they come in
+    # Milestone 5.
     payload = request.get_json(silent=True)
     if not isinstance(payload, dict):
         payload = {}
@@ -234,6 +236,9 @@ def submit():
             "message": "The checker isn't available right now. Try again later.",
         }), 503
 
+    style_score = stylometry.style_signal(text)
+    combined_score = scoring.combine_signals(model_score, style_score)
+
     content_id = str(uuid.uuid4())
     guess = "unsure"
     confidence = 0.5
@@ -244,6 +249,8 @@ def submit():
         creator_id=creator_id,
         guess=guess,
         model_score=model_score,
+        style_score=style_score,
+        combined_score=combined_score,
         label=label,
     )
 
@@ -253,7 +260,8 @@ def submit():
         "confidence": confidence,
         "label": label,
         "model_score": model_score,
-        "style_score": None,
+        "style_score": style_score,
+        "combined_score": combined_score,
     })
 
 

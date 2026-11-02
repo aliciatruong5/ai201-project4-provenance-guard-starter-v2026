@@ -87,9 +87,36 @@ A piece of text goes through seven stages between arriving and the label a reade
 <!-- Write the rule in words, then give the numbers. What happens when the two
      signals disagree? -->
 
-**The rule:**
+**The rule:** A weighted average, with a guard for disagreement. Both signals count equally. If one signal clearly says "human" while the other clearly says "AI", the two methods disagree, and I treat that as uncertainty: the average is pulled halfway back toward the middle. The effect is that a split can never produce the high-confidence AI label (or the high-confidence human one), so nobody is accused because one signal alone said so. To get the AI label, both signals have to lean AI.
+
+This is the false-positive decision from [DESIGN.md](DESIGN.md) put into code. The bus-story case (model 0.74, style 0.37) is the one it was written for.
 
 **The numbers:**
+
+| Setting | Value | Meaning |
+|---|---|---|
+| `WEIGHT_MODEL_SIGNAL` | 0.5 | share of the average from signal one |
+| `WEIGHT_STYLE_SIGNAL` | 0.5 | share from signal two |
+| `SPLIT_LOW` | 0.40 | a signal at or below this "says human" |
+| `SPLIT_HIGH` | 0.60 | a signal at or above this "says AI" |
+| `SPLIT_SHRINK` | 0.5 | on a split, distance from 0.5 is halved |
+| `HUMAN_THRESHOLD` | 0.35 | below this: high-confidence human |
+| `AI_THRESHOLD` | 0.70 (was 0.65) | above this: high-confidence AI |
+
+A split means one signal ≤ 0.40 and the other ≥ 0.60. In that case `score = 0.5 + (average − 0.5) × 0.5`. With those settings the worst case is one signal at 1.0 and the other at 0.40: average 0.70, pulled to 0.60, which is still under 0.70. So a split always lands in "unsure", and this holds for any pair of scores. (I checked it: of 3,362 split pairs on a 0.01 grid, none came out outside the unsure band.) I raised the AI threshold from 0.65 to 0.70 because the plain-writer paragraph (grocery store) averaged 0.648, two thousandths under the old line.
+
+What the rule gives on the six pieces from the split comparison:
+
+| Piece | model | style | combined | label band |
+|---|---|---|---|---|
+| Chatbot paragraph | 0.884 | 0.536 | 0.710 | AI |
+| Vivid human | 0.305 | 0.271 | 0.288 | human |
+| Plain human (grocery store) | 0.762 | 0.534 | 0.648 | unsure |
+| Casual, uneven | 0.315 | 0.298 | 0.307 | human |
+| Bus story (split) | 0.742 | 0.366 | 0.527 | unsure |
+| Ornate, even (split) | 0.304 | 0.684 | 0.497 | unsure |
+
+The weak spot is the top of the range. The chatbot paragraph clears the AI line by only 0.01, because the style signal rarely goes above 0.55 and caps the average. The grocery-store paragraph sits 0.052 below it. I expect the calibration run to move one of these numbers.
 
 **Where it lives:** `scoring.py::combine_signals`
 
