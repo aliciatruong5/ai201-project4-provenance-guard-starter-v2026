@@ -39,6 +39,15 @@
 <!-- The path a submission takes, from arriving to the label a reader sees.
      Six or seven steps — this is the trace you wrote in Milestone 1. -->
 
+A piece of text goes through seven stages between arriving and the label a reader sees:
+
+1. **The route (`app.py::submit`)** receives `POST /submit` with `{"text", "creator_id"}`. It checks the input first (missing, empty, or enormous text is turned away with an error instead of crashing) and assigns a fresh `content_id`, which is what lets a later appeal find this decision. If rate limiting is on, the limiter has already counted the caller by this point.
+2. **Signal one (`detector.py::model_signal`)** runs the text through a small language model (GPT-2) and measures its perplexity, meaning how predictable the text is. The perplexity is squashed onto 0–1 so that predictable text scores high (more likely AI). This adds the *model's* opinion of the text.
+3. **Signal two (`stylometry.py::style_signal`)** ignores meaning and measures the shape of the writing: sentence-length spread, word variety, and punctuation density. These are folded into a 0–1 score, again with high meaning more likely AI. This adds an independent, cheap opinion that doesn't depend on a model.
+4. **The combining rule (`scoring.py::combine_signals`)** merges the two scores into one 0–1 score. This is where the decision about which kind of mistake is worse gets made, including what happens when the signals disagree.
+5. **The label mapping (`scoring.py::score_to_label`)** compares that score to the thresholds in `config.py` (below 0.35 human, above 0.65 AI, otherwise unsure) and returns a short guess (`human` / `unsure` / `ai`) plus a plain-language sentence written for someone who has never heard of a threshold.
+6. **The audit log (`audit.py::log_decision`)** writes one JSON line holding the content_id, creator_id, both signal scores, the combined score, the guess, the label, and a timestamp. This adds the record that `/appeal` and `/log` read back, and the only trace of the decision if something later looks wrong.
+7. **The response** goes back to the caller as JSON: `content_id`, `guess`, `confidence`, `label`, `model_score`, and `style_score`. The reader sees the label text. If they disagree, `POST /appeal` with the content_id moves the item to `under_review` and logs their reasoning (`audit.py::log_appeal`).
 
 
 ---
@@ -53,19 +62,25 @@
 
 ### Signal one — the model signal
 
-**What it measures:**
+**What it measures:** How predictable the text is to a small language model (GPT-2, run locally in `detector.py`). It computes perplexity: how surprised the model is, on average, by each next word. Low perplexity means "I could have guessed this", and the result is squashed onto 0–1 so that predictable text scores high (more likely AI).
 
-**Why that might differ between human and AI writing:**
+**Why that might differ between human and AI writing:** A language model writes by repeatedly picking a likely next word, so text it produced tends to be text another model finds easy to predict. Human writing wanders more: odd word choices, abrupt turns, the specific instead of the typical. That gives human text higher perplexity on average.
 
-**What it can't see:**
+**What it can't see:** Authorship. Predictability is not the same thing as being machine-written. What this signal really rewards is common words in short, ordinary sentences, and plenty of real people write that way: someone writing in a second language and sticking to vocabulary they're sure of, a younger writer, anyone writing plainly on purpose. Measured against GPT-2, that writing scores about as machine-like as machine output. It fails the other way too: dense, ornate prose full of rare words scores as human, because rare words are exactly what a model fails to predict. So the writers it is most likely to wrongly accuse are the ones with the least room to argue back, and someone who asks an AI to use unusual words can walk past it. It also reads only the first 400 tokens, so anything after that is invisible to it.
 
 ### Signal two — the style signal
 
-**What it measures:**
+**What it measures:** The shape of the text as text, with no understanding of what it says (`stylometry.py::style_signal`). It combines three measures, each scaled to 0–1 and oriented so that higher means more likely AI:
 
-**Why that might differ between human and AI writing:**
+- sentence-length spread (standard deviation over mean, flipped so even, march-in-step sentences score high)
+- type-token ratio (unique words over total words, flipped so a narrow, repeating vocabulary scores high)
+- punctuation density (how much and how varied, with semicolons and dashes weighted over full stops because they vary more between writers)
 
-**What it can't see:**
+**Why that might differ between human and AI writing:** "Most likely next word" generation tends toward even, mid-length sentences and a narrower band of vocabulary. Human writing is lumpier: a three-word sentence next to a forty-word one, and more idiosyncratic punctuation.
+
+**What it can't see:** Meaning. It has no idea what the text says, so anything that changes the shape without changing the substance moves it. Adding typos raises word variety. Breaking AI sentences into fragments, or joining some into long ones, creates the lumpiness it reads as human. Pasting in a quotation or a list changes the spread. All of these are cheap to do on purpose. It also misfires on honest writers whose natural shape looks "even": a short, tidy, single-topic piece, or a one-sentence submission with no spread to measure at all. And type-token ratio falls as text gets longer, so a long human text can look machine-like on length alone.
+
+**Why the two together:** They fail on different inputs. Signal one is fooled by changing word choice, and signal two is fooled by changing the shape. Neither is fooled by the other's trick, which is the only reason combining them is worth anything. They share one failure, though: plain, short, ordinary human writing looks machine-like to both.
 
 ### The combining rule
 
