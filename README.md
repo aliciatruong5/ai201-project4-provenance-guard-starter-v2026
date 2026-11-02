@@ -41,14 +41,13 @@
 
 A piece of text goes through seven stages between arriving and the label a reader sees:
 
-1. **The route (`app.py::submit`)** receives `POST /submit` with `{"text", "creator_id"}`. It checks the input first (missing, empty, or enormous text is turned away with an error instead of crashing) and assigns a fresh `content_id`, which is what lets a later appeal find this decision. If rate limiting is on, the limiter has already counted the caller by this point.
-2. **Signal one (`detector.py::model_signal`)** runs the text through a small language model (GPT-2) and measures its perplexity, meaning how predictable the text is. The perplexity is squashed onto 0–1 so that predictable text scores high (more likely AI). This adds the *model's* opinion of the text.
-3. **Signal two (`stylometry.py::style_signal`)** ignores meaning and measures the shape of the writing: sentence-length spread, word variety, and punctuation density. These are folded into a 0–1 score, again with high meaning more likely AI. This adds an independent, cheap opinion that doesn't depend on a model.
-4. **The combining rule (`scoring.py::combine_signals`)** merges the two scores into one 0–1 score. This is where the decision about which kind of mistake is worse gets made, including what happens when the signals disagree.
-5. **The label mapping (`scoring.py::score_to_label`)** compares that score to the thresholds in `config.py` (below 0.35 human, above 0.65 AI, otherwise unsure) and returns a short guess (`human` / `unsure` / `ai`) plus a plain-language sentence written for someone who has never heard of a threshold.
-6. **The audit log (`audit.py::log_decision`)** writes one JSON line holding the content_id, creator_id, both signal scores, the combined score, the guess, the label, and a timestamp. This adds the record that `/appeal` and `/log` read back, and the only trace of the decision if something later looks wrong.
-7. **The response** goes back to the caller as JSON: `content_id`, `guess`, `confidence`, `label`, `model_score`, and `style_score`. The reader sees the label text. If they disagree, `POST /appeal` with the content_id moves the item to `under_review` and logs their reasoning (`audit.py::log_appeal`).
-
+1. **The route (`app.py::submit`)** receives `POST /submit` with `{"text", "creator_id"}` and checks it before anything else runs. A missing or empty field is a 400, text over 20,000 characters is a 413, and a request the model can't read (too short) is a 422. A good request gets a fresh `content_id`, which is how a later appeal finds this decision.
+2. **Signal one (`detector.py::model_signal`)** runs the text through GPT-2 locally and measures its perplexity, how predictable the text is. The result is squashed onto 0–1, where predictable text scores high (more likely AI). This adds the model's view: whether a language model could have guessed these words.
+3. **Signal two (`stylometry.py::style_signal`)** ignores meaning and measures the shape of the writing: how much sentence length varies (weight 0.5), how varied the vocabulary is (0.3) and how much punctuation there is (0.2). Each is flipped so that high means more AI. This adds an independent view that needs no model, and that fails on different inputs.
+4. **The combining rule (`scoring.py::combine_signals`)** averages the two scores 50/50 into one 0–1 score. If one signal is at or below 0.40 and the other at or above 0.60, the signals disagree, so the average is pulled halfway back toward 0.5. A split can therefore never produce the AI label. This is where a real writer is protected from one signal's mistake.
+5. **The label mapping (`scoring.py::score_to_label`)** compares the combined score to two cut-offs: below 0.35 is "human", above 0.70 is "AI", anything between is "unsure". It returns a short guess and a plain-language sentence written for someone who has never heard of a threshold. `app.py` also turns the score into a `confidence` for that guess.
+6. **The audit log (`audit.py::log_decision`)** appends one JSON line to `logs/audit.jsonl`: timestamp, `content_id`, `creator_id`, guess, label, `model_score`, `style_score`, `combined_score` and status `decided`. This adds the record that `/appeal` and `/log` read back, and the only trace of a decision if it later looks wrong.
+7. **The response** goes back as JSON with `content_id`, `guess`, `confidence`, `label`, `model_score`, `style_score` and `combined_score`. The reader sees the label sentence. If they disagree, `POST /appeal` with the `content_id` and their reasoning appends an appeal entry beside the original decision and sets the status to `under_review`. The original line is never edited.
 
 ---
 
@@ -119,6 +118,8 @@ What the rule gives on the six pieces from the split comparison:
 The weak spot is the top of the range. The chatbot paragraph clears the AI line by only 0.01, because the style signal rarely goes above 0.55 and caps the average. The grocery-store paragraph sits 0.052 below it. I expect the calibration run to move one of these numbers.
 
 **Where it lives:** `scoring.py::combine_signals`
+
+The whole rule, the average and the disagreement guard, is in that one function. It reads its numbers (`WEIGHT_MODEL_SIGNAL`, `WEIGHT_STYLE_SIGNAL`, `SPLIT_LOW`, `SPLIT_HIGH`, `SPLIT_SHRINK`) from `config.py`. The cut-offs that turn the result into a label (`HUMAN_THRESHOLD`, `AI_THRESHOLD`) are in `config.py` too, but are applied separately, in `scoring.py::score_to_label`. `app.py::submit` calls both and adds nothing to the score.
 
 <!-- ⚠️ The grader checks your code against that line. If your rule lives
      somewhere else, say where. -->
@@ -269,17 +270,19 @@ The log is append-only. The original decision (`status: "decided"`) is untouched
 
 ## How I Used AI
 
-**Moment 1**
+I built this with Claude Code in my editor. Two moments where I checked what it gave me, not just accepted it:
 
-- *What I asked for:*
-- *What came back:*
-- *What I changed:*
+**Moment 1: the combining rule**
 
-**Moment 2**
+- *What I asked for:* A combining rule in `scoring.py::combine_signals`, written down in the README before it was coded, with the weights and thresholds in `config.py`. I told it the case the rule had to handle was the "bus story" split (plain human writing: model 0.74, style 0.37).
+- *What came back:* A 50/50 weighted average plus a disagreement guard (when one signal is at or below 0.40 and the other at or above 0.60, pull the average halfway back toward 0.5), with a README table of every number. It also ran a check over every split pair on a 0.01 grid (3,362 pairs) and none landed outside "unsure".
+- *What I changed:* Two things the first draft got wrong, or left open. The AI threshold went from 0.65 to 0.70, because my plain-writer test paragraph (the grocery-store job) averaged 0.648, two thousandths under the old line. And I wrote down that the guard does not protect that paragraph (its scores are 0.76 and 0.53, not a split), so the threshold is doing that work alone. The split cut-offs (0.40 and 0.60) come from my two test samples and are not fitted to a larger set.
 
-- *What I asked for:*
-- *What came back:*
-- *What I changed:*
+**Moment 2: the style signal**
+
+- *What I asked for:* `stylometry.py` filled in with sentence-length spread, the ratio of unique words, and punctuation density, combined into one 0–1 score where higher means more likely AI, tested from the terminal.
+- *What came back:* Three measures and a weighted score (0.5, 0.3, 0.2), with first-guess cut-offs. Run on my four samples, it ordered them correctly, but the terminal output showed that only sentence-length spread was separating them. On the same paragraphs, the AI text had more varied vocabulary (0.90 against 0.83) and more punctuation (0.12 against 0.05) than the human text, the opposite of what the design assumed.
+- *What I changed:* I did not change the cut-offs. Four paragraphs I wrote myself are too few to tune against, and tuning to them would fit noise. I kept vocabulary and punctuation as the two lighter measures, wrote the weakness into the Signals and Scoring section, and left the real check for the calibration inputs and next unit's trials.
 
 <!-- ═══════════════════════ UNIT 8 — THE TEST ═══════════════════════ -->
 
