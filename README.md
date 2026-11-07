@@ -518,39 +518,58 @@ FP05, a person's own technical documentation, labelled "ai". Both signals agreed
 
 ## Run Log and Verdicts
 
-<!-- Your five criteria across three trials. `run_eval.py --label before`. -->
+Run with `python run_eval.py --label before` (`results/run_2026-11-07_1523_before.md`, run after I added my own writing to `scenarios.py`), three trials, plus `appeal_check.py` for criterion 4 and the sixth criterion-5 case, which `scenarios.py` can't express. Targets are from `criteria.md`. The model signal gave identical scores in all three trials on my laptop, so the repeats showed no run-to-run variation.
 
 | Criterion | Target | Run 1 | Run 2 | Run 3 | Verdict |
 |---|---|---|---|---|---|
-| 1.  |  |  |  |  |  |
-| 2.  |  |  |  |  |  |
-| 3.  |  |  |  |  |  |
-| 4.  |  |  |  |  |  |
-| 5.  |  |  |  |  |  |
+| 1. My own writing is almost never called AI | at most 1 of 10 of my pieces gets the AI label, in each trial, at least 3 plain | 0 of 10 called AI (3 human, 7 unsure) | 0 of 10 | 0 of 10 | **Met**, with caveats below. |
+| 2. Clearly-AI and clearly-human score far apart | AI group average at least 0.30 above human group, no overlap | gap 0.29 (AI mean 0.61, human mean 0.32); AI lowest 0.52, human highest 0.62 | same | same | **Missed.** The gap is 0.01 short and the groups overlap by 0.10. |
+| 3. All three labels reachable | 12 inputs, each label at least 2, every trial | ai 2, human 3, unsure 7 | ai 2, human 3, unsure 7 | ai 2, human 3, unsure 7 | **Met**, but thin. The AI label rests on exactly two inputs, and one scored 0.713 against a 0.70 line. |
+| 4. Appeals change status and get recorded | 6 of 6: 5 real ids return 200 `under_review` and add one appeal entry, decision unchanged; unknown id returns 404, no entry | 6/6 | 6/6 | 6/6 | **Met.** |
+| 5. Bad input gets a clear error | 6 malformed requests, all 4xx with a JSON error, no 500, `/ping` still answers | 6/6, `/ping` 200 | 6/6, `/ping` 200 | 6/6, `/ping` 200 | **Met.** No field missing: 400 x4, 50,000 characters: 413, JSON list body: 400. |
 
-**Real output from one trial**, pasted as text, naming the file and function
-that produced it:
+**Real output from one trial**, from `run_eval.py::main` calling `app.py::submit` (the file is `results/run_2026-11-07_1523_before.md`, scenario "clearly AI", trial 1, the first two of the five AI texts):
 
 ```json
-
+[
+  {
+    "status": 200,
+    "guess": "unsure",
+    "confidence": 0.6244,
+    "model_score": 0.8344,
+    "style_score": 0.5412,
+    "label": "We can't tell whether this was written by a person or with an AI tool. That is not a judgment against you, and nothing needs to change.",
+    "sent": "Effective time management is a crucial skill that can significantly en"
+  },
+  {
+    "status": 200,
+    "guess": "unsure",
+    "confidence": 0.7044,
+    "model_score": 0.879,
+    "style_score": 0.4165,
+    "label": "We can't tell whether this was written by a person or with an AI tool. That is not a judgment against you, and nothing needs to change.",
+    "sent": "Climate change represents one of the most pressing challenges facing h"
+  }
+]
 ```
+
+Both texts are plain chatbot output. Signal one is confident (0.83 and 0.88). Signal two is not (0.54 and 0.42). Neither text reaches the AI label. The scenario holds both groups: positions 1–5 are my human pieces and 6–10 are the AI texts, which is how I split them for criterion 2.
 
 **Diagnoses**
 
-<!-- For each miss AND each broken attack: the stage and the mechanism.
+*Criterion 2 / the AI half of every attack: clearly-AI text never reaches the AI label.* None of the 5 chatbot paragraphs is labelled AI in any trial. Signal one gives them 0.79 to 0.91, so the model sees them clearly. Signal two (`stylometry.py`) gives them 0.29 to 0.54, so it sees almost nothing. The combining rule averages the two at equal weight (0.5 each), which puts three of the five between 0.64 and 0.69, under the 0.70 line. On the two with the lowest style scores (0.29 and 0.37) the split rule in `scoring.combine_signals` also fires, because one signal is at or below 0.40 and the other is at or above 0.60. It pulls the score back toward 0.5, down to 0.52 and 0.57, so the two with the most confident model signal land lowest. The weak stage is signal two, and the combining rule turns that weakness into misses. This is also why criterion 3's AI label is thin: only two of my 12 inputs got through.
 
-     Your service has five stages: the route, signal one, signal two, the
-     combining rule, and the label mapping.
+*Attack run, EV01–EV09 (9 evasion inputs not labelled AI): same stage, three ways in.* In each, one signal went down and the average followed it under 0.70. EV01 (typos): model score 0.16. Typos make the text harder for the model to predict, so signal one read it as human. EV08 (short text, under the token window): model 0.25, which suggests signal one has too little text to read. EV02, EV06 and EV07 (broken-up sentences, one very long and one very short sentence, punctuation padding): style scores 0.22 to 0.28, so signal two was bent by changing the shape of the text. EV09 (human paragraph bolted on): model 0.70 but style 0.34. EV05 is the one that went to "human" (0.32 and 0.24); it is a heavy human editing pass, so I am least sure it is a failure. These are two weaknesses, not nine: signal one is fooled by anything that raises perplexity, and signal two is fooled by anything that changes sentence shape. Both flow into an average with no rule for "one signal is confident".
 
-     Not a diagnosis:  "The evasion attacks got through."
-     A diagnosis:      "Four evasion inputs got through. All four had typos
-                        added to AI-generated text. My second signal measures
-                        word variety, and typos raise word variety — so it read
-                        them as more human. My combining rule weights that
-                        signal at 0.6, so it dragged the whole score down."
+*PI02 (fake `SYSTEM:` message got "human", 0.20 and 0.20):* the service never reads the text as an instruction, so this is not the injection working. The likely cause is that the bolted-on prefix is unusual text, which raises perplexity across the whole input and drags signal one down, the same mechanism as EV01. I have not isolated this by removing the prefix.
 
-     Look for a pattern. Five failures on one signal is one problem, not five. -->
+*FP02 and FP05 (real writers labelled AI):* both signals agree (0.74 and 0.67, 0.80 and 0.76), so the combining rule is not at fault and the split rule could not soften them. Signal one reads formal and technical prose as predictable, and signal two reads its even sentence length as machine-like. This is the weakness DESIGN.md already named, and a threshold change alone would trade it for more missed AI text.
 
+*MF03, MF04, MF06, MF07 (not writing, but confidently labelled):* the route stage only rejects empty or one-character text, so control characters, punctuation and emoji reach the detector. Signal one then scores them (1.00 on emoji, 0.91 on right-to-left script, 0.00 on control characters), and the combining rule turns that into "human" or "ai" at 0.70 to 0.80 confidence. There is no stage that asks whether the input is prose at all.
+
+*Criterion 2 missed, from the human side too.* Combined scores for my five human pieces were 0.25, 0.62, 0.45, 0.20 and 0.09. The 0.62 is "Don't let life get you down, let down with your life", where signal one gave 0.58 and signal two 0.66, so both signals read a short slogan as machine-like. That one piece is what breaks the no-overlap rule, since it sits above the lowest AI score (0.52). All five of my human pieces are very short (25 to 52 characters), and signal one has too little text to work with, which is the EV08 problem again. So the miss has two causes in two stages: signal two keeps clear AI text near 0.5, and signal one is unreliable on very short text. I am leaving the target at 0.30 and not lowering it.
+
+*Criterion 1 is met, but the pass is less solid than it looks.* The 10 pieces are 0 AI, 3 human and 7 unsure, in all three trials. Six of them have deliberate typos or slang ("soong", "vistior", "tey", "sacre", "fillec", "sooo gawwdd"), and the typos pull signal one down to 0.01–0.22, which is the same mechanism as the EV01 typo attack. Without the typos, my plainest sentences scored highest: "One day, they had an unexpected visitor on the moon. They did not know who it could be." reached 0.65, close to the 0.70 line. Several pieces are also parts of one short story, so they are less independent than 10 separate pieces would be. The target holds, but my sample is easy mostly because of the typos, so it is weaker evidence than a clean 10 would be.
 
 
 ---
