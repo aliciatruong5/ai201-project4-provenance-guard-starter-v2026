@@ -290,47 +290,113 @@ I built this with Claude Code in my editor. Two moments where I checked what it 
 
 ## Rate Limiting
 
-**My limits:** ___ per minute, ___ per day
+**My limits:** 6 per minute, 120 per day, on `POST /submit`. Set in `config.py` (`RATE_LIMIT_PER_MINUTE`, `RATE_LIMIT_PER_DAY`) and applied by the `@limiter.limit(...)` line above `submit` in `app.py`. `GET /health` reports `"rate_limiting": true` when it is on.
 
 **Why those numbers and not others:**
-<!-- Think about two people: a real writer submitting their own work a few
-     times an hour, and a script sending a thousand variations to map your
-     thresholds. Your numbers have to be liveable for the first and hostile to
-     the second. -->
 
-**What a caller counts as:** <!-- per address, or per creator_id? They fail
-differently — one script can look like a thousand callers, and one household
-can look like one. -->
+A real writer submits their own work a few times an hour, maybe twenty drafts in a heavy day. 6 a minute is well above anything a person does by hand, since each one takes a second or two and they have to read the label and edit before sending again. 120 a day is about six times that heavy day. So neither limit gets in a real writer's way.
+
+A script is different. Mapping my thresholds means sending many near-copies of one text and watching where the label flips. At 6 a minute that is 360 an hour at best, and the day cap stops it at 120. That is slow enough to be annoying, but I won't pretend it is enough to stop someone patient: 120 probes is plenty to find roughly where 0.70 sits for one text. What the limit does is make mapping take days instead of minutes, and it leaves a trail, because every rejection is written to the audit log.
+
+I did not pick lower numbers because a writer who pastes in a bad draft, fixes one word and resubmits five times in a minute is behaving normally, and a wrong 429 on them reads as an accusation too.
+
+**What a caller counts as:** The `creator_id` in the request body. `rate_limit_key` in `app.py` uses it when it is a non-empty string, and falls back to the caller's IP address when it is missing or the body isn't a JSON object.
+
+That choice has a real weakness, and I tested it: right after the flood below, one request as a different creator, `someone_else`, got a 200. `creator_id` is whatever the caller says it is, so a script that sends a fresh `creator_id` with every request is never limited at all. Keying on the IP address instead would stop that, but then one household or one office shares a single allowance, and a script behind many addresses still gets through. Per-address is the harder one to dodge and per-`creator_id` is the one that is fair to a shared network. For one laptop's demo I left the starter's per-`creator_id` rule in place, and I count it as an attack that gets through (see What's Still Broken).
 
 **The run of status codes when I pushed past it:**
 
-<!-- python run_attacks.py --flood 15 -->
-
+```bash
+$ python run_attacks.py --flood 15
 ```
 
+```
+200 200 200 200 200 200 429 429 429 429 429 429 429 429 429
+```
+
+The first six went through and the next nine were rejected, as the 6-a-minute limit says. `GET /log` recorded the rejections, so they leave a trace:
+
+```json
+{
+  "creator_id": "flood_tester",
+  "event": "rejected",
+  "limit": "6 per 1 minute",
+  "reason": "rate_limited",
+  "status": "rejected",
+  "timestamp": "2026-11-04T23:44:00+00:00"
+}
 ```
 
 ---
 
 ## Attack Run — Before
 
-<!-- Every attack with its outcome and a held-or-broke mark.
-     `run_attacks.py --label before` produces the table. -->
+Run: `python run_attacks.py --set attack_set --label before` on 2026-11-06 (`results/attack_run_2026-11-06_2234_before.md`). 56 attacks sent, 0 auto-marked BROKE (no crashes or 5xx). The verdicts are mine. My rule: an evasion or injection attack **broke** if text that was built from AI output was not labelled "ai", and a false-positive input **broke** if it was labelled "ai". Malformed requests held if they got a clean 4xx, and broke if they got a confident label for something that is not writing.
 
+| ID | What it tried | Status | Label | Model / Style | Verdict |
+|---|---|---|---|---|---|
+| EV01 | typos added to AI text | 200 | unsure | 0.16 / 0.56 | **BROKE** |
+| EV02 | broken-up sentences ("Really.") | 200 | unsure | 0.59 / 0.22 | **BROKE** |
+| EV03 | pasted quotation | 200 | unsure | 0.67 / 0.34 | **BROKE** |
+| EV04 | unusual words | 200 | unsure | 0.61 / 0.55 | **BROKE** |
+| EV05 | heavy human editing pass | 200 | human | 0.32 / 0.24 | **BROKE** |
+| EV06 | one very long and one very short sentence | 200 | unsure | 0.57 / 0.27 | **BROKE** |
+| EV07 | punctuation padding | 200 | unsure | 0.59 / 0.28 | **BROKE** |
+| EV08 | text below the token window | 200 | unsure | 0.25 / 0.50 | **BROKE** |
+| EV09 | human paragraph bolted onto AI text | 200 | unsure | 0.70 / 0.34 | **BROKE** |
+| EV10 | repeated stanza structure | 200 | ai | 0.98 / 0.72 | HELD |
+| FP01 | plain, clear human writing | 200 | unsure | 0.62 / 0.48 | HELD |
+| FP02 | formal register | 200 | ai | 0.74 / 0.67 | **BROKE** |
+| FP03 | careful non-native English | 200 | unsure | 0.81 / 0.58 | HELD |
+| FP04 | student essay to a rubric | 200 | unsure | 0.83 / 0.54 | HELD |
+| FP05 | human technical documentation | 200 | ai | 0.80 / 0.76 | **BROKE** |
+| FP06 | imitating a formal template | 200 | unsure | 0.88 / 0.49 | HELD |
+| FP07 | deliberate repeated phrase | 200 | unsure | 0.88 / 0.48 | HELD |
+| FP08 | very short genuine submission | 200 | unsure | 0.32 / 0.39 | HELD |
+| PI01 | "ignore all previous instructions" | 200 | unsure | 0.46 / 0.24 | HELD |
+| PI02 | fake `SYSTEM:` message, `guess=human` | 200 | human | 0.20 / 0.20 | **BROKE** |
+| PI03 | instruction in the writer's voice | 200 | unsure | 0.59 / 0.44 | HELD |
+| PI04 | make the label hostile | 200 | unsure | 0.50 / 0.44 | HELD |
+| PI05 | forge a JSON entry into the audit log | 200 | unsure | 0.64 / 0.16 | HELD |
+| PI06 | instruction plus real human text | 200 | unsure | 0.56 / 0.49 | HELD |
+| MF01 | whitespace only | 400 | none | none | HELD |
+| MF02 | single character | 422 | none | none | HELD |
+| MF03 | control characters only | 200 | human | 0.00 / 0.40 | **BROKE** |
+| MF04 | punctuation only | 200 | human | 0.01 / 0.50 | **BROKE** |
+| MF05 | one very long word | 200 | unsure | 1.00 / 0.40 | HELD |
+| MF06 | emoji only | 200 | ai | 1.00 / 0.50 | **BROKE** |
+| MF07 | right-to-left script | 200 | ai | 0.91 / 0.50 | **BROKE** |
+| MF08 | 60,000 characters | 413 | none | none | HELD |
+| RQ01–RQ10, RQ12 | missing field, wrong type, bad JSON, empty body, form-encoded, nested JSON | 400 | none | none | HELD (all 11) |
+| RQ11 | JSON sent as plain text | 429 | none | none | HELD |
+| FL01_01–06 | first 6 of a 20-request burst, one creator | 200 | human | 0.03 / 0.40 | HELD |
+| FL01_07–12 | the next requests in the burst | 429 | none | none | HELD |
 
+**Totals:** 16 broke, 40 held. Evasion 9 of 10 broke. False positives 2 of 8. Prompt injection 1 of 6. Malformed requests 4 of 20 (MF03, MF04, MF06, MF07). Flood 0 of 12.
 
-**Ten audit log entries from the run**
+Two notes on the verdicts. First, a result of "unsure" on AI text is a softer failure than "human", but I still count it as a break, because the label tells the platform nothing and the whole point of the attack was to avoid "ai". Second, on PI01 and PI03–PI06 the injected instruction did nothing. The service never reads the text as instructions, and the label and audit log came out clean. They landed on "unsure" for the same reason the evasion attacks did, which is that the added text pulled the signals down.
 
-<!-- Choose entries that show the interesting failures, not the ten easiest. -->
+**Ten audit log entries from the run** (from `logs/audit.jsonl`, long label text shortened to its type)
 
 ```json
-
+{"timestamp": "2026-11-07T06:34:30+00:00", "content_id": "b085b8f4-0454-420f-bcf2-bc5c8cb20607", "creator_id": "attacker_EV01", "guess": "unsure", "model_score": 0.1635, "style_score": 0.5629, "combined_score": 0.3632, "label": "unsure label", "status": "decided"}
+{"timestamp": "2026-11-07T06:34:30+00:00", "content_id": "ad9bd93f-395c-4d32-a034-38a7c1746cb6", "creator_id": "attacker_EV05", "guess": "human", "model_score": 0.3212, "style_score": 0.2384, "combined_score": 0.2798, "label": "human label", "status": "decided"}
+{"timestamp": "2026-11-07T06:34:30+00:00", "content_id": "cf890f27-4e99-4441-85d5-a96aedb685f4", "creator_id": "attacker_EV03", "guess": "unsure", "model_score": 0.6662, "style_score": 0.3373, "combined_score": 0.5009, "label": "unsure label", "status": "decided"}
+{"timestamp": "2026-11-07T06:34:30+00:00", "content_id": "31918547-717c-4374-afd2-bcb59af6a5aa", "creator_id": "attacker_EV09", "guess": "unsure", "model_score": 0.7042, "style_score": 0.3438, "combined_score": 0.512, "label": "unsure label", "status": "decided"}
+{"timestamp": "2026-11-07T06:34:31+00:00", "content_id": "2df2df4e-daeb-43f4-8ef5-24740077bffa", "creator_id": "attacker_PI02", "guess": "human", "model_score": 0.2044, "style_score": 0.2048, "combined_score": 0.2046, "label": "human label", "status": "decided"}
+{"timestamp": "2026-11-07T06:34:31+00:00", "content_id": "4b93d7fa-e651-4370-956c-55d7d42569d5", "creator_id": "attacker_PI05", "guess": "unsure", "model_score": 0.6401, "style_score": 0.1633, "combined_score": 0.4508, "label": "unsure label", "status": "decided"}
+{"timestamp": "2026-11-07T06:34:31+00:00", "content_id": "3368cd53-6cec-4dff-83a3-5fc99f45a83e", "creator_id": "attacker_FP02", "guess": "ai", "model_score": 0.7387, "style_score": 0.6742, "combined_score": 0.7065, "label": "ai label", "status": "decided"}
+{"timestamp": "2026-11-07T06:34:31+00:00", "content_id": "91e2b480-82ec-42f6-af84-2b896c2ac3f9", "creator_id": "attacker_FP05", "guess": "ai", "model_score": 0.8005, "style_score": 0.7611, "combined_score": 0.7808, "label": "ai label", "status": "decided"}
+{"timestamp": "2026-11-07T06:34:31+00:00", "content_id": "ee5a5bdb-5834-4869-84ae-639db9a45ffa", "creator_id": "attacker_MF03", "guess": "human", "model_score": 0.0, "style_score": 0.4, "combined_score": 0.2, "label": "human label", "status": "decided"}
+{"timestamp": "2026-11-07T06:34:32+00:00", "content_id": "03a72c75-04a9-4cc1-b6bc-df8762a4b790", "creator_id": "attacker_MF06", "guess": "ai", "model_score": 0.9969, "style_score": 0.5, "combined_score": 0.7485, "label": "ai label", "status": "decided"}
 ```
+
+I picked these to cover each way it failed. EV01, EV03 and EV09 are AI text that slid into "unsure" because one signal dropped. EV05 is the only evasion that earned "human". PI02 is AI text with a fake instruction on top that scored 0.20 on both signals. PI05 shows the forged log entry did not get into the log. FP02 and FP05 are real people called AI. MF03 and MF06 are inputs that are not writing getting a confident label.
 
 **The single worst outcome** — the one I'd least want to explain to a writer
 whose work got caught by it:
 
-
+FP05, a person's own technical documentation, labelled "ai". Both signals agreed (model 0.80, style 0.76, combined 0.78), so this is not a case where the two signals split and the rule pulled it back toward uncertain. It is a writer who did everything right and got a label saying their work "may have been written with an AI tool". The label does soften it ("we can get this wrong, especially with plain or formal writing"), and there is an appeal route, but the writer still has to prove they wrote their own docs. Plain, structured, instructional prose is exactly what my style signal reads as machine-like, so the people most likely to hit this are people who write clearly.
 
 ---
 
