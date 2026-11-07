@@ -376,22 +376,138 @@ Run: `python run_attacks.py --set attack_set --label before` on 2026-11-06 (`res
 
 Two notes on the verdicts. First, a result of "unsure" on AI text is a softer failure than "human", but I still count it as a break, because the label tells the platform nothing and the whole point of the attack was to avoid "ai". Second, on PI01 and PI03–PI06 the injected instruction did nothing. The service never reads the text as instructions, and the label and audit log came out clean. They landed on "unsure" for the same reason the evasion attacks did, which is that the added text pulled the signals down.
 
-**Ten audit log entries from the run** (from `logs/audit.jsonl`, long label text shortened to its type)
+**Twelve audit log entries from the run** (ten decisions, two rejections) (copied unedited from `logs/audit.jsonl`)
 
 ```json
-{"timestamp": "2026-11-07T06:34:30+00:00", "content_id": "b085b8f4-0454-420f-bcf2-bc5c8cb20607", "creator_id": "attacker_EV01", "guess": "unsure", "model_score": 0.1635, "style_score": 0.5629, "combined_score": 0.3632, "label": "unsure label", "status": "decided"}
-{"timestamp": "2026-11-07T06:34:30+00:00", "content_id": "ad9bd93f-395c-4d32-a034-38a7c1746cb6", "creator_id": "attacker_EV05", "guess": "human", "model_score": 0.3212, "style_score": 0.2384, "combined_score": 0.2798, "label": "human label", "status": "decided"}
-{"timestamp": "2026-11-07T06:34:30+00:00", "content_id": "cf890f27-4e99-4441-85d5-a96aedb685f4", "creator_id": "attacker_EV03", "guess": "unsure", "model_score": 0.6662, "style_score": 0.3373, "combined_score": 0.5009, "label": "unsure label", "status": "decided"}
-{"timestamp": "2026-11-07T06:34:30+00:00", "content_id": "31918547-717c-4374-afd2-bcb59af6a5aa", "creator_id": "attacker_EV09", "guess": "unsure", "model_score": 0.7042, "style_score": 0.3438, "combined_score": 0.512, "label": "unsure label", "status": "decided"}
-{"timestamp": "2026-11-07T06:34:31+00:00", "content_id": "2df2df4e-daeb-43f4-8ef5-24740077bffa", "creator_id": "attacker_PI02", "guess": "human", "model_score": 0.2044, "style_score": 0.2048, "combined_score": 0.2046, "label": "human label", "status": "decided"}
-{"timestamp": "2026-11-07T06:34:31+00:00", "content_id": "4b93d7fa-e651-4370-956c-55d7d42569d5", "creator_id": "attacker_PI05", "guess": "unsure", "model_score": 0.6401, "style_score": 0.1633, "combined_score": 0.4508, "label": "unsure label", "status": "decided"}
-{"timestamp": "2026-11-07T06:34:31+00:00", "content_id": "3368cd53-6cec-4dff-83a3-5fc99f45a83e", "creator_id": "attacker_FP02", "guess": "ai", "model_score": 0.7387, "style_score": 0.6742, "combined_score": 0.7065, "label": "ai label", "status": "decided"}
-{"timestamp": "2026-11-07T06:34:31+00:00", "content_id": "91e2b480-82ec-42f6-af84-2b896c2ac3f9", "creator_id": "attacker_FP05", "guess": "ai", "model_score": 0.8005, "style_score": 0.7611, "combined_score": 0.7808, "label": "ai label", "status": "decided"}
-{"timestamp": "2026-11-07T06:34:31+00:00", "content_id": "ee5a5bdb-5834-4869-84ae-639db9a45ffa", "creator_id": "attacker_MF03", "guess": "human", "model_score": 0.0, "style_score": 0.4, "combined_score": 0.2, "label": "human label", "status": "decided"}
-{"timestamp": "2026-11-07T06:34:32+00:00", "content_id": "03a72c75-04a9-4cc1-b6bc-df8762a4b790", "creator_id": "attacker_MF06", "guess": "ai", "model_score": 0.9969, "style_score": 0.5, "combined_score": 0.7485, "label": "ai label", "status": "decided"}
+{
+  "timestamp": "2026-11-07T06:34:30+00:00",
+  "content_id": "b085b8f4-0454-420f-bcf2-bc5c8cb20607",
+  "creator_id": "attacker_EV01",
+  "guess": "unsure",
+  "model_score": 0.1635,
+  "style_score": 0.5629,
+  "combined_score": 0.3632,
+  "label": "We can't tell whether this was written by a person or with an AI tool. That is not a judgment against you, and nothing needs to change.",
+  "status": "decided"
+}
+{
+  "timestamp": "2026-11-07T06:34:30+00:00",
+  "content_id": "ad9bd93f-395c-4d32-a034-38a7c1746cb6",
+  "creator_id": "attacker_EV05",
+  "guess": "human",
+  "model_score": 0.3212,
+  "style_score": 0.2384,
+  "combined_score": 0.2798,
+  "label": "We think this was probably written by a person.",
+  "status": "decided"
+}
+{
+  "timestamp": "2026-11-07T06:34:30+00:00",
+  "content_id": "cf890f27-4e99-4441-85d5-a96aedb685f4",
+  "creator_id": "attacker_EV03",
+  "guess": "unsure",
+  "model_score": 0.6662,
+  "style_score": 0.3373,
+  "combined_score": 0.5009,
+  "label": "We can't tell whether this was written by a person or with an AI tool. That is not a judgment against you, and nothing needs to change.",
+  "status": "decided"
+}
+{
+  "timestamp": "2026-11-07T06:34:30+00:00",
+  "content_id": "31918547-717c-4374-afd2-bcb59af6a5aa",
+  "creator_id": "attacker_EV09",
+  "guess": "unsure",
+  "model_score": 0.7042,
+  "style_score": 0.3438,
+  "combined_score": 0.512,
+  "label": "We can't tell whether this was written by a person or with an AI tool. That is not a judgment against you, and nothing needs to change.",
+  "status": "decided"
+}
+{
+  "timestamp": "2026-11-07T06:34:31+00:00",
+  "content_id": "2df2df4e-daeb-43f4-8ef5-24740077bffa",
+  "creator_id": "attacker_PI02",
+  "guess": "human",
+  "model_score": 0.2044,
+  "style_score": 0.2048,
+  "combined_score": 0.2046,
+  "label": "We think this was probably written by a person.",
+  "status": "decided"
+}
+{
+  "timestamp": "2026-11-07T06:34:31+00:00",
+  "content_id": "4b93d7fa-e651-4370-956c-55d7d42569d5",
+  "creator_id": "attacker_PI05",
+  "guess": "unsure",
+  "model_score": 0.6401,
+  "style_score": 0.1633,
+  "combined_score": 0.4508,
+  "label": "We can't tell whether this was written by a person or with an AI tool. That is not a judgment against you, and nothing needs to change.",
+  "status": "decided"
+}
+{
+  "timestamp": "2026-11-07T06:34:31+00:00",
+  "content_id": "3368cd53-6cec-4dff-83a3-5fc99f45a83e",
+  "creator_id": "attacker_FP02",
+  "guess": "ai",
+  "model_score": 0.7387,
+  "style_score": 0.6742,
+  "combined_score": 0.7065,
+  "label": "This looks like it may have been written with an AI tool, but we can get this wrong, especially with plain or formal writing. If you wrote it yourself, tell us and a person will take a look.",
+  "status": "decided"
+}
+{
+  "timestamp": "2026-11-07T06:34:31+00:00",
+  "content_id": "91e2b480-82ec-42f6-af84-2b896c2ac3f9",
+  "creator_id": "attacker_FP05",
+  "guess": "ai",
+  "model_score": 0.8005,
+  "style_score": 0.7611,
+  "combined_score": 0.7808,
+  "label": "This looks like it may have been written with an AI tool, but we can get this wrong, especially with plain or formal writing. If you wrote it yourself, tell us and a person will take a look.",
+  "status": "decided"
+}
+{
+  "timestamp": "2026-11-07T06:34:31+00:00",
+  "content_id": "ee5a5bdb-5834-4869-84ae-639db9a45ffa",
+  "creator_id": "attacker_MF03",
+  "guess": "human",
+  "model_score": 0.0,
+  "style_score": 0.4,
+  "combined_score": 0.2,
+  "label": "We think this was probably written by a person.",
+  "status": "decided"
+}
+{
+  "timestamp": "2026-11-07T06:34:32+00:00",
+  "content_id": "03a72c75-04a9-4cc1-b6bc-df8762a4b790",
+  "creator_id": "attacker_MF06",
+  "guess": "ai",
+  "model_score": 0.9969,
+  "style_score": 0.5,
+  "combined_score": 0.7485,
+  "label": "This looks like it may have been written with an AI tool, but we can get this wrong, especially with plain or formal writing. If you wrote it yourself, tell us and a person will take a look.",
+  "status": "decided"
+}
+{
+  "timestamp": "2026-11-07T06:34:32+00:00",
+  "creator_id": "attacker_flood",
+  "event": "rejected",
+  "status": "rejected",
+  "reason": "rate_limited",
+  "limit": "6 per 1 minute"
+}
+{
+  "timestamp": "2026-11-07T06:34:32+00:00",
+  "creator_id": "unknown",
+  "event": "rejected",
+  "status": "rejected",
+  "reason": "rate_limited",
+  "limit": "6 per 1 minute"
+}
 ```
 
-I picked these to cover each way it failed. EV01, EV03 and EV09 are AI text that slid into "unsure" because one signal dropped. EV05 is the only evasion that earned "human". PI02 is AI text with a fake instruction on top that scored 0.20 on both signals. PI05 shows the forged log entry did not get into the log. FP02 and FP05 are real people called AI. MF03 and MF06 are inputs that are not writing getting a confident label.
+I picked these to cover each way it failed. EV01, EV03 and EV09 are AI text that slid into "unsure" because one signal dropped. EV05 is the only evasion that earned "human". PI02 is AI text with a fake instruction on top that scored 0.20 on both signals. PI05 shows the forged log entry did not get into the log. FP02 and FP05 are real people called AI. MF03 and MF06 are inputs that are not writing getting a confident label. The last two are rejections from the flood rows: they carry only a timestamp, creator, event, status, reason and limit, with no scores or label. The first is a 429 for `attacker_flood`, and the second has `creator_id` "unknown" because the RQ11 request had no usable `creator_id`, so the limiter keyed on its address instead.
 
 **The single worst outcome** — the one I'd least want to explain to a writer
 whose work got caught by it:
