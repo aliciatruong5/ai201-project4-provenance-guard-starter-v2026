@@ -24,6 +24,7 @@ Routes:
     GET  /health      is the service up, and is the model loaded
 """
 
+import re
 import uuid
 
 from flask import Flask, jsonify, request
@@ -153,6 +154,17 @@ def health():
 
 # ── YOU BUILD THIS ────────────────────────────────────────────────────────────
 
+# At least this many words with two or more Latin letters, or the text is not
+# English prose and the detector has nothing fair to read.
+MIN_READABLE_WORDS = 3
+_READABLE_WORD = re.compile(r"[A-Za-z]{2,}")
+
+
+def looks_like_prose(text: str) -> bool:
+    """False for control characters, punctuation, emoji, other scripts, or one long token."""
+    return len(_READABLE_WORD.findall(text)) >= MIN_READABLE_WORDS
+
+
 @app.post("/submit")
 @limiter.limit(f"{config.RATE_LIMIT_PER_MINUTE}/minute;{config.RATE_LIMIT_PER_DAY}/day")
 def submit():
@@ -221,6 +233,13 @@ def submit():
             "error": "text_too_long",
             "message": "That text is too long. Send 20,000 characters or fewer.",
         }), 413
+
+    if not looks_like_prose(text):
+        return jsonify({
+            "error": "not_readable",
+            "message": "We can only check English writing, and this doesn't "
+                       "have enough of it. Send a few sentences of text.",
+        }), 422
 
     try:
         model_score = detector.model_signal(text)

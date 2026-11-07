@@ -591,22 +591,29 @@ Both texts are plain chatbot output. Signal one is confident (0.83 and 0.88). Si
 
 ## The Improvement
 
-**What I changed:**
+**What I changed:** I added an input check to the route, `looks_like_prose` in `app.py`, that runs after the length check and before either signal. Text must contain at least 3 words with two or more Latin letters (`MIN_READABLE_WORDS = 3`). Anything else returns a 422 with the error code `not_readable` and the message "We can only check English writing, and this doesn't have enough of it. Send a few sentences of text." Nothing is scored or logged for these. I did not change either signal, the weights, or the thresholds.
 
-**Which diagnosis pointed at it:**
+**Which diagnosis pointed at it:** The Diagnoses table gave the stage "the route" for MF03, MF04, MF06 and MF07. The route only rejected empty text and text over 20,000 characters, so control characters, punctuation, emoji and right-to-left script all reached signal one, and the averaging in the combining rule turned the result into a confident "human" or "ai" label. I chose this over reweighting or moving a threshold because it fixes a stage that was plainly wrong without making any real writer's label worse. Reweighting signal one up would have pushed my own FP03, FP04, FP06 and FP07 (model scores 0.81 to 0.88) toward the AI label, and I rank a wrong accusation as the costlier error.
 
 ### Attack Run — After
 
-<!-- Same format. `run_attacks.py --label after` -->
+Run: `python run_attacks.py --set attack_set --label after` (`results/attack_run_2026-11-07_1535_after.md`). All 56 attacks sent again, with the same verdict rule as the before run.
 
+Only 5 of the 56 attacks came back differently. Every other row has the same status, label and score as in the before run.
 
+| ID | What it tried | Before | After | Verdict |
+|---|---|---|---|---|
+| MF03 | control characters only | 200, human 0.80 | 422 `not_readable` | **HELD** (was BROKE) |
+| MF04 | punctuation only | 200, human 0.74 | 422 `not_readable` | **HELD** (was BROKE) |
+| MF05 | one very long word | 200, unsure | 422 `not_readable` | HELD (was HELD) |
+| MF06 | emoji only | 200, ai 0.75 | 422 `not_readable` | **HELD** (was BROKE) |
+| MF07 | right-to-left script | 200, ai 0.70 | 422 `not_readable` | **HELD** (was BROKE) |
 
-**Did it help, and how do I know:**
+Everything else is unchanged: EV01–EV09 still **BROKE**, EV10 HELD, FP02 and FP05 still **BROKE**, PI02 still **BROKE**, and the rest of the false-positive, prompt-injection, request-shape (RQ) and flood rows still HELD. That makes **12 broken, 44 held**, down from 16 broken and 40 held. The criteria run (`results/run_2026-11-07_1535_after.md`) is also identical to the before run: criterion 1 met, criterion 2 missed by the same 0.29 gap, criteria 3, 4 and 5 met. `test.py` still passes 9 of 9.
 
-<!-- Widening the unsure band usually fixes one problem and creates another.
-     Reporting that trade honestly is worth full credit. -->
+**Did it help, and how do I know:** It fixed what it was aimed at: 4 of 16 broken attacks, all four from the same stage, and the before and after audit and result files show no other row moving. It did not touch the other 12 broken attacks or the criterion 2 miss, because those come from the signals and the combining rule, not the route.
 
-
+The cost is on the other side. The check also turns away real writing that is not English: a person writing in Arabic, Hindi or Chinese used to be labelled (MF07 was labelled "ai" at 0.70, which was a false accusation of a real script) and now gets a 422 and no label. I think that is better than a confident wrong label, but it means the service refuses to judge those writers at all. Very short real text also still cannot be judged: anything under three Latin words is rejected, though signal one already refused some of those with `text_too_short`.
 
 ---
 
