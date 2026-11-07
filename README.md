@@ -284,6 +284,18 @@ I built this with Claude Code in my editor. Two moments where I checked what it 
 - *What came back:* Three measures and a weighted score (0.5, 0.3, 0.2), with first-guess cut-offs. Run on my four samples, it ordered them correctly, but the terminal output showed that only sentence-length spread was separating them. On the same paragraphs, the AI text had more varied vocabulary (0.90 against 0.83) and more punctuation (0.12 against 0.05) than the human text, the opposite of what the design assumed.
 - *What I changed:* I did not change the cut-offs. Four paragraphs I wrote myself are too few to tune against, and tuning to them would fit noise. I kept vocabulary and punctuation as the two lighter measures, wrote the weakness into the Signals and Scoring section, and left the real check for the calibration inputs and next unit's trials.
 
+**Moment 3: the diagnoses**
+
+- *What I asked for:* The stage and mechanism for every broken attack and missed criterion.
+- *What came back:* A table of the 16 broken attacks. Two rows (EV03, EV09) blamed the disagreement guard.
+- *What I changed:* I checked the arithmetic against the audit log. The plain averages were already 0.50 and 0.52, so equal-weight averaging was the cause, not the guard. I fixed both rows and marked PI02 and EV08 as unconfirmed.
+
+**Moment 4: the improvement**
+
+- *What I asked for:* One improvement that follows from the diagnoses.
+- *What came back:* An input check in `app.py` for the four malformed inputs that came from the route, chosen over reweighting, which would have pushed my own false-positive samples toward the AI label.
+- *What I checked:* I re-ran all 56 attacks and compared every row with the before run. Only the five expected rows changed. The cost is that writing in other scripts now gets no label.
+
 <!-- ═══════════════════════ UNIT 8 — THE TEST ═══════════════════════ -->
 
 ---
@@ -622,12 +634,19 @@ The cost is on the other side. The check also turns away real writing that is no
 <!-- For each attack still getting through and each criterion still missed:
      what you'd do, and why you stopped. -->
 
+After the improvement, 12 of 56 attacks still break and criterion 2 is still missed.
 
+- **EV01, EV04, PI02 (signal one):** typos, rare words and the fake header raise perplexity. I'd score sentence by sentence instead of averaging the whole text. I stopped because nine attacks can't tell me whether that helps or just moves the misses, and it also shifts my false-positive inputs.
+- **EV08 (very short text):** 65 characters is too little for signal one. I'd answer "unsure" under a set word count. I stopped because I have no principled cutoff, only a handful of short samples.
+- **EV02, EV03, EV06, EV07 (signal two):** sentence shape and punctuation fool it. I'd measure on chunks and ignore inserted punctuation. I stopped because I have too few samples to tell a better version from a worse one.
+- **EV09 (combining rule):** equal weights turn a correct signal one (0.70) into "unsure" (0.51). Weighting signal one higher would also push FP03, FP04, FP06 and FP07 toward the AI label. I stopped because that trades a catch for accusations.
+- **FP02, FP05:** both signals agree and are wrong. Moving the threshold to 0.80 would clear them, but it would drop my label-coverage input out of the AI label and fail criterion 3. The appeal path is what these writers have.
+- **EV05:** I think this one is close to correct, so I wouldn't fix it.
+- **Criterion 2 (gap 0.29 against 0.30):** I'd gather more and longer human pieces before touching weights. I stopped because tuning to 10 samples would fit noise.
 
 **The trade I'd make if this ran for real:**
 
-<!-- Two sentences. Fewer wrong accusations means more AI text getting through.
-     Say which way you'd go and WHO PAYS FOR IT. -->
+I'd keep the AI threshold at 0.70 and accept that the service misses a lot of AI text, since 9 of 10 evasion attacks and all 5 chatbot paragraphs landed in "unsure". The platform pays for that, in some AI text going unlabelled, which I'd rather accept than put more plain or formal writers like FP02 and FP05 behind an "AI" label.
 
 
 
